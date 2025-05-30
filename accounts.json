@@ -1,0 +1,44 @@
+{
+    "000001": {
+        "account_number": "000001",
+        "owner": "king",
+        "balance": 1020.0,
+        "transaction_history": [
+            {
+                "timestamp": "2025-05-30T18:51:46.322754",
+                "type": "DEPOSIT",
+                "amount": 1000,
+                "balance_after": 1000.0
+            },
+            {
+                "timestamp": "2025-05-30T18:51:46.323619",
+                "type": "DEPOSIT",
+                "amount": 20.0,
+                "balance_after": 1020.0
+            }
+        ],
+        "account_type": "SavingsAccount",
+        "interest_rate": 0.02
+    },
+    "000002": {
+        "account_number": "000002",
+        "owner": "king",
+        "balance": 300.0,
+        "transaction_history": [
+            {
+                "timestamp": "2025-05-30T18:51:46.323256",
+                "type": "DEPOSIT",
+                "amount": 500,
+                "balance_after": 500.0
+            },
+            {
+                "timestamp": "2025-05-30T18:51:46.323490",
+                "type": "WITHDRAW",
+                "amount": 200,
+                "balance_after": 300.0
+            }
+        ],
+        "account_type": "CheckingAccount",
+        "overdraft_limit": 500
+    }
+}

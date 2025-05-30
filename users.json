@@ -1,0 +1,11 @@
+{
+    "king": {
+        "username": "king",
+        "salt": "db0ce57c32b6a7f70fbd430bef2d30c7",
+        "password_hash": "aa242d51eb5c406a26cc6dc0dd2ddcf0cbc55dc7c7b7a07f577e1925bf556fb2",
+        "accounts": [
+            "000001",
+            "000002"
+        ]
+    }
+}

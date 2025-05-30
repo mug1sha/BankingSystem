@@ -1,0 +1,274 @@
+import datetime
+import hashlib
+import json
+import os
+
+# User class manages user information and authentication
+class User:
+    def __init__(self, username, password):
+        self.username = username
+        self.salt = os.urandom(16)  # Generate random salt
+        self.password_hash = self._hash_password(password)
+        self.accounts = []  # List of associated account numbers
+
+    def _hash_password(self, password):
+        return hashlib.sha256(self.salt + password.encode()).hexdigest()
+
+    def verify_password(self, password):
+        return self.password_hash == hashlib.sha256(self.salt + password.encode()).hexdigest()
+
+    def add_account(self, account_number):
+        self.accounts.append(account_number)
+
+    def to_dict(self):
+        return {
+            'username': self.username,
+            'salt': self.salt.hex(),
+            'password_hash': self.password_hash,
+            'accounts': self.accounts
+        }
+
+    @staticmethod
+    def from_dict(data):
+        user = User.__new__(User)
+        user.username = data['username']
+        user.salt = bytes.fromhex(data['salt'])
+        user.password_hash = data['password_hash']
+        user.accounts = data['accounts']
+        return user
+
+# Base Account class with common account functionality
+class Account:
+    def __init__(self, account_number, owner):
+        self.account_number = account_number
+        self.owner = owner
+        self._balance = 0.0
+        self.transaction_history = []
+
+    @property
+    def balance(self):
+        return self._balance
+
+    def deposit(self, amount):
+        if amount <= 0:
+            raise ValueError("Deposit amount must be positive.")
+        self._balance += amount
+        self._log_transaction('DEPOSIT', amount)
+        print(f"Deposited ${amount:.2f}. New balance: ${self._balance:.2f}")
+
+    def withdraw(self, amount):
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be positive.")
+        if amount > self._balance:
+            raise ValueError("Insufficient funds.")
+        self._balance -= amount
+        self._log_transaction('WITHDRAW', amount)
+        print(f"Withdrew ${amount:.2f}. New balance: ${self._balance:.2f}")
+
+    def _log_transaction(self, transaction_type, amount):
+        timestamp = datetime.datetime.now().isoformat()
+        self.transaction_history.append({
+            'timestamp': timestamp,
+            'type': transaction_type,
+            'amount': amount,
+            'balance_after': self._balance
+        })
+
+    def print_statement(self):
+        print(f"Statement for Account {self.account_number}:")
+        for txn in self.transaction_history:
+            print(f"{txn['timestamp']} | {txn['type']} | ${txn['amount']:.2f} | Balance after: ${txn['balance_after']:.2f}")
+
+    def to_dict(self):
+        return {
+            'account_number': self.account_number,
+            'owner': self.owner,
+            'balance': self._balance,
+            'transaction_history': self.transaction_history,
+            'account_type': self.__class__.__name__
+        }
+
+    @staticmethod
+    def from_dict(data):
+        account = Account(data['account_number'], data['owner'])
+        account._balance = data['balance']
+        account.transaction_history = data['transaction_history']
+        return account
+
+# SavingsAccount class includes interest application
+class SavingsAccount(Account):
+    def __init__(self, account_number, owner, interest_rate=0.02):
+        super().__init__(account_number, owner)
+        self.interest_rate = interest_rate
+
+    def apply_interest(self):
+        interest = self._balance * self.interest_rate
+        self.deposit(interest)
+        print(f"Interest of ${interest:.2f} applied.")
+
+    def to_dict(self):
+        data = super().to_dict()
+        data['interest_rate'] = self.interest_rate
+        return data
+
+    @staticmethod
+    def from_dict(data):
+        account = SavingsAccount(data['account_number'], data['owner'], data.get('interest_rate', 0.02))
+        account._balance = data['balance']
+        account.transaction_history = data['transaction_history']
+        return account
+
+# CheckingAccount class supports overdraft
+class CheckingAccount(Account):
+    def __init__(self, account_number, owner, overdraft_limit=500):
+        super().__init__(account_number, owner)
+        self.overdraft_limit = overdraft_limit
+
+    def withdraw(self, amount):
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be positive.")
+        if amount > self._balance + self.overdraft_limit:
+            raise ValueError("Overdraft limit exceeded.")
+        self._balance -= amount
+        self._log_transaction('WITHDRAW', amount)
+        print(f"Withdrew ${amount:.2f}. New balance: ${self._balance:.2f}")
+
+    def to_dict(self):
+        data = super().to_dict()
+        data['overdraft_limit'] = self.overdraft_limit
+        return data
+
+    @staticmethod
+    def from_dict(data):
+        account = CheckingAccount(data['account_number'], data['owner'], data.get('overdraft_limit', 500))
+        account._balance = data['balance']
+        account.transaction_history = data['transaction_history']
+        return account
+
+# Main banking system
+class BankSystem:
+    def __init__(self, users_file='users.json', accounts_file='accounts.json'):
+        self.users_file = users_file
+        self.accounts_file = accounts_file
+        self.users = {}  # username -> User
+        self.accounts = {}  # account_number -> Account
+        self.load_data()
+
+    def create_user(self, username, password):
+        if username in self.users:
+            raise ValueError("Username already exists.")
+        user = User(username, password)
+        self.users[username] = user
+        self.save_users()
+        print(f"User '{username}' created successfully.")
+
+    def authenticate_user(self, username, password):
+        user = self.users.get(username)
+        if user and user.verify_password(password):
+            print(f"User '{username}' authenticated successfully.")
+            return user
+        else:
+            print("Invalid username or password.")
+            return None
+
+    def create_account(self, user: User, account_type='SavingsAccount'):
+        account_number = str(len(self.accounts) + 1).zfill(6)  # Generate a 6-digit account number
+        if account_type == 'SavingsAccount':
+            account = SavingsAccount(account_number, user.username)
+        elif account_type == 'CheckingAccount':
+            account = CheckingAccount(account_number, user.username)
+        else:
+            account = Account(account_number, user.username)
+
+        self.accounts[account_number] = account
+        user.add_account(account_number)
+        self.save_accounts()
+        self.save_users()
+        print(f"{account_type} account {account_number} created for user {user.username}.")
+        return account
+
+    def get_user_accounts(self, user: User):
+        return [self.accounts[acc_num] for acc_num in user.accounts]
+
+    def save_users(self):
+        with open(self.users_file, 'w') as f:
+            json.dump({u: user.to_dict() for u, user in self.users.items()}, f, indent=4)
+
+    def save_accounts(self):
+        with open(self.accounts_file, 'w') as f:
+            json.dump({acc_num: acc.to_dict() for acc_num, acc in self.accounts.items()}, f, indent=4)
+
+    def load_data(self):
+        # Load users from file
+        if os.path.exists(self.users_file):
+            with open(self.users_file, 'r') as f:
+                users_data = json.load(f)
+            self.users = {u: User.from_dict(data) for u, data in users_data.items()}
+
+        # Load accounts and instantiate based on type
+        if os.path.exists(self.accounts_file):
+            with open(self.accounts_file, 'r') as f:
+                accounts_data = json.load(f)
+
+            self.accounts = {}
+            for acc_num, data in accounts_data.items():
+                acc_type = data.get('account_type', 'Account')
+                if acc_type == 'SavingsAccount':
+                    account = SavingsAccount.from_dict(data)
+                elif acc_type == 'CheckingAccount':
+                    account = CheckingAccount.from_dict(data)
+                else:
+                    account = Account.from_dict(data)
+                self.accounts[acc_num] = account
+
+# Main simulation entry point
+if __name__ == "__main__":
+    bank = BankSystem()
+
+    username = "king"
+    password = "mypassword123"
+
+    # Try to authenticate user first
+    user = bank.authenticate_user(username, password)
+
+    # If user does not exist, create it and authenticate again
+    if not user:
+        try:
+            bank.create_user(username, password)
+            user = bank.authenticate_user(username, password)
+        except ValueError as e:
+            print("Error creating user:", e)
+            exit(1)  # Stop if user creation fails
+
+    # Safety check: If still no user, exit
+    if not user:
+        print("Failed to authenticate or create user. Exiting.")
+        exit(1)
+
+    # Get user accounts or create if missing
+    user_accounts = bank.get_user_accounts(user)
+    savings = next((acc for acc in user_accounts if isinstance(acc, SavingsAccount)), None)
+    checking = next((acc for acc in user_accounts if isinstance(acc, CheckingAccount)), None)
+
+    if not savings:
+        savings = bank.create_account(user, 'SavingsAccount')
+    if not checking:
+        checking = bank.create_account(user, 'CheckingAccount')
+
+    # Now you can safely do transactions
+    try:
+        savings.deposit(1000)
+        checking.deposit(500)
+        checking.withdraw(200)
+        savings.apply_interest()
+    except ValueError as ve:
+        print("Transaction error:", ve)
+
+    # Print account statements
+    for acc in bank.get_user_accounts(user):
+        acc.print_statement()
+
+    # Save data so changes persist
+    bank.save_users()
+    bank.save_accounts()
+
